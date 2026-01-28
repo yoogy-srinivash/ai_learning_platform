@@ -11,7 +11,7 @@ from app.api.progress import router as progress_router
 from app.api.tasks import router as tasks_router
 from app.api.dashboard import router as dashboard_router
 from app.api.continue_learning import router as continue_router
-
+from app.api.roadmap_next import router as roadmap_next_router
 
 
 
@@ -30,6 +30,7 @@ app.include_router(progress_router)
 app.include_router(tasks_router)
 app.include_router(dashboard_router)
 app.include_router(continue_router)
+app.include_router(roadmap_next_router)
 
 
 @app.get("/health")

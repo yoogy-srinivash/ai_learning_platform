@@ -87,3 +87,69 @@ def module_progress(
         "completed_tasks": completed_tasks,
         "completion_percentage": completion_percentage,
     }
+
+@router.get("/{module_id}/next-task")
+def next_task_for_module(
+    module_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # 1️⃣ Validate module
+    module = db.query(Module).filter(Module.id == module_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    # 2️⃣ Fetch all tasks in module (ordered)
+    tasks = (
+        db.query(Task)
+        .filter(Task.module_id == module_id)
+        .order_by(Task.id)
+        .all()
+    )
+
+    if not tasks:
+        return {
+            "module_completed": True,
+            "message": "No tasks in this module",
+        }
+
+    # 3️⃣ Get completed task IDs for user
+    completed_task_ids = {
+        p.task_id
+        for p in db.query(UserProgress)
+        .filter(
+            UserProgress.user_id == current_user.id,
+            UserProgress.completed.is_(True),
+        )
+        .all()
+    }
+
+    # 4️⃣ Find first incomplete task
+    for task in tasks:
+        if task.id not in completed_task_ids:
+            return {
+                "module_completed": False,
+                "module": {
+                    "id": module.id,
+                    "month_number": module.month_number,
+                    "title": module.title,
+                },
+                "task": {
+                    "id": task.id,
+                    "type": task.type,
+                    "title": task.title,
+                    "content": task.content_json,
+                    "points": task.points,
+                },
+            }
+
+    # 5️⃣ All tasks done
+    return {
+        "module_completed": True,
+        "module": {
+            "id": module.id,
+            "month_number": module.month_number,
+            "title": module.title,
+        },
+        "message": "All tasks in this module are completed",
+    }
