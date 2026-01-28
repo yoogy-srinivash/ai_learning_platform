@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, exists
 from typing import List, Optional
 
 from app.db.deps import get_db
@@ -41,7 +41,7 @@ def get_module(module_id: int, db: Session = Depends(get_db)):
 
 
 # -------------------------
-# NEW: Module completion %
+# Module completion %
 # -------------------------
 
 @router.get("/{module_id}/progress")
@@ -50,7 +50,6 @@ def module_progress(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 1️⃣ Total tasks in module
     total_tasks = (
         db.query(func.count(Task.id))
         .filter(Task.module_id == module_id)
@@ -65,7 +64,6 @@ def module_progress(
             "completion_percentage": 0,
         }
 
-    # 2️⃣ Completed tasks by this user
     completed_tasks = (
         db.query(func.count(UserProgress.id))
         .join(Task, Task.id == UserProgress.task_id)
@@ -78,7 +76,8 @@ def module_progress(
     )
 
     completion_percentage = round(
-        (completed_tasks / total_tasks) * 100, 2
+        (completed_tasks / total_tasks) * 100,
+        2,
     )
 
     return {
@@ -87,6 +86,11 @@ def module_progress(
         "completed_tasks": completed_tasks,
         "completion_percentage": completion_percentage,
     }
+
+
+# -------------------------
+# NEXT TASK (FIXED & SCALABLE)
+# -------------------------
 
 @router.get("/{module_id}/next-task")
 def next_task_for_module(
@@ -99,57 +103,46 @@ def next_task_for_module(
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    # 2️⃣ Fetch all tasks in module (ordered)
-    tasks = (
+    # 2️⃣ Find first incomplete task (DB-level)
+    next_task = (
         db.query(Task)
         .filter(Task.module_id == module_id)
+        .filter(
+            ~exists().where(
+                UserProgress.user_id == current_user.id,
+                UserProgress.task_id == Task.id,
+                UserProgress.completed.is_(True),
+            )
+        )
         .order_by(Task.id)
-        .all()
+        .first()
     )
 
-    if not tasks:
+    # 3️⃣ All tasks completed
+    if not next_task:
         return {
             "module_completed": True,
-            "message": "No tasks in this module",
+            "module": {
+                "id": module.id,
+                "month_number": module.month_number,
+                "title": module.title,
+            },
+            "message": "All tasks in this module are completed",
         }
 
-    # 3️⃣ Get completed task IDs for user
-    completed_task_ids = {
-        p.task_id
-        for p in db.query(UserProgress)
-        .filter(
-            UserProgress.user_id == current_user.id,
-            UserProgress.completed.is_(True),
-        )
-        .all()
-    }
-
-    # 4️⃣ Find first incomplete task
-    for task in tasks:
-        if task.id not in completed_task_ids:
-            return {
-                "module_completed": False,
-                "module": {
-                    "id": module.id,
-                    "month_number": module.month_number,
-                    "title": module.title,
-                },
-                "task": {
-                    "id": task.id,
-                    "type": task.type,
-                    "title": task.title,
-                    "content": task.content_json,
-                    "points": task.points,
-                },
-            }
-
-    # 5️⃣ All tasks done
+    # 4️⃣ Return next task
     return {
-        "module_completed": True,
+        "module_completed": False,
         "module": {
             "id": module.id,
             "month_number": module.month_number,
             "title": module.title,
         },
-        "message": "All tasks in this module are completed",
+        "task": {
+            "id": next_task.id,
+            "type": next_task.type,
+            "title": next_task.title,
+            "content": next_task.content_json,
+            "points": next_task.points,
+        },
     }

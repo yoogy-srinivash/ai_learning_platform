@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, exists
 
 from app.db.deps import get_db
 from app.api.deps import get_current_user
@@ -33,16 +33,13 @@ def continue_learning(
             UserProgress.user_id == current_user.id,
             UserProgress.completed.is_(False),
         )
+        .order_by(desc(UserProgress.created_at))
     )
 
     if roadmap_id:
         resume_query = resume_query.filter(Module.roadmap_id == roadmap_id)
 
-    last_progress = (
-        resume_query
-        .order_by(desc(UserProgress.created_at))
-        .first()
-    )
+    last_progress = resume_query.first()
 
     if last_progress:
         return _build_task_response(
@@ -52,24 +49,19 @@ def continue_learning(
         )
 
     # ------------------------------------------------
-    # 2️⃣ First incomplete task (ordered)
+    # 2️⃣ Next incomplete task (SQL-driven)
     # ------------------------------------------------
-
-    # ✅ FIX: compute completed tasks FIRST (cheap query)
-    completed_task_ids = {
-        p.task_id
-        for p in db.query(UserProgress.task_id)
-        .filter(
-            UserProgress.user_id == current_user.id,
-            UserProgress.completed.is_(True),
-        )
-        .all()
-    }
-
-    tasks_query = (
+    next_task_query = (
         db.query(Task)
         .join(Module)
         .join(Roadmap)
+        .filter(
+            ~exists().where(
+                UserProgress.user_id == current_user.id,
+                UserProgress.task_id == Task.id,
+                UserProgress.completed.is_(True),
+            )
+        )
         .order_by(
             Roadmap.id,
             Module.month_number,
@@ -78,17 +70,18 @@ def continue_learning(
     )
 
     if roadmap_id:
-        tasks_query = tasks_query.filter(Module.roadmap_id == roadmap_id)
+        next_task_query = next_task_query.filter(
+            Module.roadmap_id == roadmap_id
+        )
 
-    tasks = tasks_query.all()
+    next_task = next_task_query.first()
 
-    for task in tasks:
-        if task.id not in completed_task_ids:
-            return _build_task_response(
-                db,
-                task.id,
-                resume=False,
-            )
+    if next_task:
+        return _build_task_response(
+            db,
+            next_task.id,
+            resume=False,
+        )
 
     # ------------------------------------------------
     # 3️⃣ Everything completed
