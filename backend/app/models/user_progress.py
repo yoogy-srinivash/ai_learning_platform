@@ -20,8 +20,13 @@ class UserProgress(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False)
 
+    # 🔹 NEW
+    started = Column(Boolean, default=False, nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+
+    # 🔹 EXISTING (unchanged)
     completed = Column(Boolean, default=False, nullable=False)
-    score = Column(Integer, nullable=True)  # quizzes/projects
+    score = Column(Integer, nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(

@@ -14,6 +14,43 @@ from app.models.module import Module
 
 router = APIRouter(prefix="/progress", tags=["progress"])
 
+@router.post("/start/{task_id}")
+def start_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # 1️⃣ Validate task
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # 2️⃣ Get or create progress row
+    progress = (
+        db.query(UserProgress)
+        .filter(
+            UserProgress.user_id == current_user.id,
+            UserProgress.task_id == task_id,
+        )
+        .first()
+    )
+
+    if not progress:
+        progress = UserProgress(
+            user_id=current_user.id,
+            task_id=task_id,
+        )
+        db.add(progress)
+
+    # 3️⃣ Mark as started (idempotent)
+    progress.started = True
+
+    db.commit()
+
+    return {
+        "task_id": task_id,
+        "started": True,
+    }
 
 # ---------------------------
 # Mark task as completed
@@ -43,6 +80,12 @@ def complete_task(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Task already completed",
         )
+
+    if not progress or not progress.started:
+        raise HTTPException(
+            status_code=400,
+            detail="Task must be started before completing",
+    )
 
     if not progress:
         progress = UserProgress(
