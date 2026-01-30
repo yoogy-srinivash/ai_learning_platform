@@ -73,3 +73,32 @@ def list_datasets(
         .order_by(Dataset.created_at.desc())
         .all()
     )
+
+
+@router.delete("/{dataset_id}")
+def delete_dataset(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    dataset = (
+        db.query(Dataset)
+        .filter(
+            Dataset.id == dataset_id,
+            Dataset.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    # Delete file from filesystem
+    if os.path.exists(dataset.file_path):
+        os.remove(dataset.file_path)
+
+    # Delete from database
+    db.delete(dataset)
+    db.commit()
+
+    return {"message": "Dataset deleted successfully"}
