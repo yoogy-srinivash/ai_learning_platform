@@ -1,6 +1,7 @@
 import os
 import uuid
 import pandas as pd
+import numpy as np
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
@@ -15,13 +16,49 @@ UPLOAD_DIR = "uploads"
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
+
+def clean_value(val):
+    if pd.isna(val):
+        return None
+    if isinstance(val, (np.integer,)):
+        return int(val)
+    if isinstance(val, (np.floating,)):
+        return float(val)
+    return val
+
+
+def clean_dict(d):
+    cleaned = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            cleaned[k] = clean_dict(v)
+        else:
+            cleaned[k] = clean_value(v)
+    return cleaned
+
+
 def profile_dataframe(df: pd.DataFrame) -> dict:
+    summary = df.describe(include="all").to_dict()
+    summary = clean_dict(summary)
+
+    missing = {
+        col: int(df[col].isna().sum())
+        for col in df.columns
+    }
+
+    sample = df.head(5).to_dict(orient="records")
+    sample = [
+        {k: clean_value(v) for k, v in row.items()}
+        for row in sample
+    ]
+
     return {
         "columns": {col: str(dtype) for col, dtype in df.dtypes.items()},
-        "missing_values": df.isnull().sum().to_dict(),
-        "summary": df.describe(include="all").to_dict(),
-        "sample": df.head(5).to_dict(orient="records"),
+        "missing_values": missing,
+        "summary": summary,
+        "sample": sample,
     }
+
 
 @router.post("/upload", response_model=DatasetOut)
 def upload_dataset(

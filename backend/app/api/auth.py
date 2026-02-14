@@ -34,10 +34,7 @@ def register(
     db.commit()
     db.refresh(user)
 
-    return {
-        "id": user.id,
-        "email": user.email,
-    }
+    return user
 
 
 @router.post("/login")
@@ -60,16 +57,4 @@ def login(
     return {
         "access_token": access_token,
         "token_type": "bearer",
-    }
-
-from fastapi import Depends
-from app.core.jwt import get_current_user
-from app.models.user import User
-
-@router.get("/me")
-def read_me(current_user: User = Depends(get_current_user)):
-    return {
-        "id": current_user.id,
-        "email": current_user.email,
-        "name": current_user.name,
     }

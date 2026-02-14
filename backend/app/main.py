@@ -12,6 +12,7 @@ from app.api.progress import router as progress_router
 from app.api.dashboard import router as dashboard_router
 from app.api.continue_learning import router as continue_router
 from app.api.roadmap_next import router as roadmap_next_router
+from app.api.experiments import router as experiments_router
 
 app = FastAPI(
     title="AI Learning Platform",
@@ -37,6 +38,7 @@ app.include_router(progress_router)
 app.include_router(dashboard_router)
 app.include_router(continue_router)
 app.include_router(roadmap_next_router)
+app.include_router(experiments_router)
 
 @app.get("/health")
 def health_check():
